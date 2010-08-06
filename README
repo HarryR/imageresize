@@ -1,0 +1,21 @@
+ImageResize
+================================
+
+In the age of multi-megapixel images and high concurrency websites it's not practical to take the 
+traditional approach to image manipulation that we so commonly see.
+
+The traditional approach is:
+
+ * Load entire image into memory
+ * Create a new buffer of the target size
+ * Run resampling algorithm which copies from Original to Resampled buffers
+ * Discard original buffer
+ * Save resampled buffer to target format (PNG, JPEG etc.)
+
+Most camera phones today come with 4MP or higher cameras, which as an RGB buffer is already 11 MiB.
+At 12MP it's already over to 35 MiB, there are a surprising number of consumer level devices already on the market
+with 12MP or larger sensors.
+
+My revised approach is to read only the scanlines required to produce one scanline in the output file and
+to re-use them as needed. This requires only the absolute minimum amount of memory and in practice has
+been significantly faster (even with the fork overhead) than PHP+gd or imagemagick.
