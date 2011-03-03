@@ -10,6 +10,8 @@
 
 /*
 Copyright (c) 2009 ECMP Ltd.
+Copyright (c) 2010 Harry Roberts.
+Copyright (c) 2011 Cal Leeming.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +34,7 @@ THE SOFTWARE.
 
 enum irz_mode {
 	MODE_SCALE,
+	MODE_SCALEASPECT,
 	MODE_SCALEFIT,
 	MODE_CROP,
 	MODE_CROPMANUAL
@@ -42,6 +45,7 @@ struct irz_config {
 	char *out_file;
 	int mode;	
 	int out_quality;
+    int debug;
 	unsigned int out_width;
 	unsigned int out_height;
 	
@@ -197,22 +201,22 @@ do_resize( struct jpeg_compress_struct *out_cinfo,
                                     }
                                     pcontribution = xportion * yportion;
 
-																		//
-																		JSAMPLE* p = buffer[ (int)sy + srcY ] + ((int)(sx + srcX) * in_dinfo->num_components);
-																		alpha_factor = gdAlphaMax * pcontribution;
-																		
-																		if( in_dinfo->num_components == 1 ) {
-																			red += p[0] * alpha_factor;
-																			green += p[0] * alpha_factor;
-																			blue += p[0] * alpha_factor;
-																		}
-																		else {
-																			red += p[0] * alpha_factor;
-		                                  green += p[1] * alpha_factor;
-		                                  blue += p[2] * alpha_factor;	
-																		}	                                  
-	                                  alpha += 0xFF * pcontribution;
-																		//
+									//
+									JSAMPLE* p = buffer[ (int)sy + srcY ] + ((int)(sx + srcX) * in_dinfo->num_components);
+									alpha_factor = gdAlphaMax * pcontribution;
+				
+									if( in_dinfo->num_components == 1 ) {
+										red += p[0] * alpha_factor;
+										green += p[0] * alpha_factor;
+										blue += p[0] * alpha_factor;
+									}
+									else {
+										red += p[0] * alpha_factor;
+		                                green += p[1] * alpha_factor;
+		                                blue += p[2] * alpha_factor;	
+									}	                                  
+	                                alpha += 0xFF * pcontribution;
+									//
 
                                     alpha_sum += alpha_factor;
                                     contrib_sum += pcontribution;
@@ -224,37 +228,37 @@ do_resize( struct jpeg_compress_struct *out_cinfo,
                             sy += 1.0f;
                     } while (sy < sy2);
 
-				        if (spixels != 0.0f) {
-                    red /= spixels;
-                    green /= spixels;
-                    blue /= spixels;
-                    alpha /= spixels;
-                 }
-            if ( alpha_sum != 0.0f) {
-                    if( contrib_sum != 0.0f) {
-                            alpha_sum /= contrib_sum;
-                    }
-                    red /= alpha_sum;
-                    green /= alpha_sum;
-                    blue /= alpha_sum;
-            }
-            /* Clamping to allow for rounding errors above */
-            if (red > 255.0f) {
-                    red = 255.0f;
-            }
-            if (green > 255.0f) {
-                    green = 255.0f;
-            }
-            if (blue > 255.0f) {
-                    blue = 255.0f;
-            }
-            if (alpha > gdAlphaMax) {
-                    alpha = gdAlphaMax;
-            }
-            out_row[3*x] = red;
-            out_row[3*x+1] = green;
-            out_row[3*x+2] = blue;
-    }
+			        if (spixels != 0.0f) {
+	                    red /= spixels;
+	                    green /= spixels;
+	                    blue /= spixels;
+	                    alpha /= spixels;
+	                }
+	            	if ( alpha_sum != 0.0f) {
+	                    if( contrib_sum != 0.0f) {
+	                            alpha_sum /= contrib_sum;
+	                    }
+	                    red /= alpha_sum;
+	                    green /= alpha_sum;
+	                    blue /= alpha_sum;
+		            }
+		            /* Clamping to allow for rounding errors above */
+		            if (red > 255.0f) {
+		                    red = 255.0f;
+		            }
+		            if (green > 255.0f) {
+		                    green = 255.0f;
+		            }
+		            if (blue > 255.0f) {
+		                    blue = 255.0f;
+		            }
+		            if (alpha > gdAlphaMax) {
+		                    alpha = gdAlphaMax;
+		            }
+		            out_row[3*x] = red;
+		            out_row[3*x+1] = green;
+		            out_row[3*x+2] = blue;
+		    }
 		jpeg_write_scanlines(out_cinfo, &out_row, 1);
 		// Forcibly stop, otherwise we get the error 'Application transferred too many scanlines'
 		if( in_dinfo->output_scanline >= in_dinfo->output_height ) break;
@@ -290,9 +294,10 @@ print_usage( char *argv0 ) {
 	fprintf(stderr, "  -in     <file> : Input image filename\n");
 	fprintf(stderr, "  -out    <file> : Output image filename\n");
 	fprintf(stderr, "  -width   <int> : Maximum output width\n");
-	fprintf(stderr, "  -mode  <which> : Resize mode, scale/scalefit/crop - default: scale\n");
 	fprintf(stderr, "  -height  <int> : Maximum output height\n");
+	fprintf(stderr, "  -mode  <which> : Resize mode, scale/scalefit/crop/scaleaspect - default: scale\n");
 	fprintf(stderr, "  -quality <int> : Output JPEG quality\n");
+	fprintf(stderr, "  -debug         : Enable debug output\n");
 	fprintf(stderr, "-crop <x:y:x2:y2>: Crop area for source image\n");
 	fprintf(stderr, "\n");
 }
@@ -307,6 +312,7 @@ parse_options( int argc, char** argv ) {
 		{ "out", 1, NULL, 'o' },
 		{ "quality", 1, NULL, 'q' }, 
 		{ "mode", 1, NULL, 'm' },
+		{ "debug", 0, NULL, 'd' },
 		{ "width", 1, NULL, 'w' },
 		{ "height", 1, NULL, 'h' },
 		{ "crop", 1, NULL, 'c' },
@@ -328,7 +334,11 @@ parse_options( int argc, char** argv ) {
 		case 'o':
 			config->out_file = optarg;
 			break;
-			
+
+		case 'd':
+			config->debug = 1;
+			break;
+
 		case 'q':
 			config->out_quality = atoi(optarg);
 			break;
@@ -340,6 +350,7 @@ parse_options( int argc, char** argv ) {
 		case 'm':
 			if( strcmp(optarg,"crop") == 0 ) config->mode = MODE_CROP;
 			if( strcmp(optarg,"scalefit") == 0 ) config->mode = MODE_SCALEFIT;
+                        if( strcmp(optarg,"scaleaspect") == 0 ) config->mode = MODE_SCALEASPECT;
 			break;
 		
 		case 'c':
@@ -370,16 +381,22 @@ parse_options( int argc, char** argv ) {
 		config->out_quality = 75;
 	}
 	else if( config->out_quality < 1 || config->out_quality > 99 ) {
-		fprintf(stderr, "Warning: quality must be between 1 and 99\n");
+		fprintf(stderr, " [*] Warning: quality must be between 1 and 99\n");
 		config->out_quality = 75;
 	}
 
 	if( config->mode == MODE_SCALE ) {
-		if( config->out_width == 0 && config->out_height == 0 ) {
-			fprintf(stderr, "Error: must specify either width or height when scaling an image\n");
-			missing_opts++;
-		}
+            if( config->out_width == 0 && config->out_height == 0 ) {
+                    fprintf(stderr, "Error: must specify either width or height when scaling an image\n");
+                    missing_opts++;
+            }
 	}
+	else if ( config->mode == MODE_SCALEASPECT) {
+        if( config->out_width < 1 && config->out_height < 1 ) {
+                fprintf(stderr, "Error: must specify either width or height when scaling an image by aspect ratio\n");
+                missing_opts++;
+        }
+    }
 	else { // if( config->mode == MODE_CROP ) {
 		if( config->out_width == 0 ) {
 			fprintf(stderr, "Error: must specify output width when cropping an image\n");
@@ -442,6 +459,26 @@ main( int argc, char **argv ) {
 	struct jpeg_error_mgr       jerr;		
 	
 	setup_in(&in_dinfo, &jerr, in_fh);
+
+	if( config->debug ) {
+        printf(" [*] Image Width: %ipx\n", (int)in_dinfo.image_width);
+        printf(" [*] Image Height: %ipx\n", (int)in_dinfo.image_height);
+        printf(" [*] Tmp Loc: %s\n", temp_out);
+	}
+
+    if ( config->out_width != 0 ) {
+        if ( (int)in_dinfo.image_width < (int)config->out_width ) {
+            fprintf(stderr, " [*] Warning: specified width is larger than original image, reducing to %ipx.\n", (int)in_dinfo.image_width);
+            config->out_width = (double)in_dinfo.image_width;
+        }
+    }
+
+    if ( config->out_height != 0 ) {
+        if ( (int)in_dinfo.image_height < (int)config->out_height ) {
+            fprintf(stderr, " [*] Warning: specified height is larger than original image, reducing to %ipx.\n", (int)in_dinfo.image_height);
+            config->out_height = (double)in_dinfo.image_height;
+        }
+    }
 	
 	// Auto-scale width or height if either was not specified
 	if( config->mode == MODE_SCALE ) {		
@@ -453,6 +490,62 @@ main( int argc, char **argv ) {
 			double ratio = (double)config->out_height / (double)in_dinfo.image_height;
 			config->out_width = ((double)in_dinfo.image_width * ratio);
 		}
+	}
+    else if( config->mode == MODE_SCALEASPECT ) {
+        double ratio;
+        unsigned int new_width = in_dinfo.image_width;
+        unsigned int new_height = in_dinfo.image_height;
+
+        if (in_dinfo.image_width > in_dinfo.image_height) {
+            ratio = ( (double)in_dinfo.image_width / (double)in_dinfo.image_height ) ;
+        } else {
+            ratio = ( (double)in_dinfo.image_height / (double)in_dinfo.image_width ) ;
+        }
+
+		if( config->debug ) {
+        	fprintf(stdout, " [*] Ratio: %f\n", ratio);
+		}
+
+        if (in_dinfo.image_width < in_dinfo.image_height) {
+            if (new_width > config->out_width) {
+                new_width = config->out_width;
+                new_height = ( new_height - ( ( (double)in_dinfo.image_width - (double)config->out_width) * ratio ) );
+
+				if( config->debug ) {
+             	   fprintf(stdout, " [-] aspect changed: width: %u / height: %u\n", new_width, new_height );
+				}
+            }
+
+            if (new_height > config->out_height) {
+                new_width = ( new_width - ( ( (double)new_height - (double)config->out_height) / ratio ) );
+                new_height = config->out_height;
+
+				if( config->debug ) {
+             	   fprintf(stdout, " [-] aspect changed: width: %u / height: %u\n", new_width, new_height );
+				}
+            }
+        } else {
+            if (new_width > config->out_width) {
+                new_width = config->out_width;
+                new_height = ( new_height - ( ( (double)in_dinfo.image_width - (double)config->out_width) / ratio ) );
+
+				if( config->debug ) {
+             	   fprintf(stdout, " [*] aspect changed: width: %u / height: %u\n", new_width, new_height );
+				}
+            }
+
+            if (new_height > config->out_height) {
+                new_width = ( new_width - ( ( (double)new_height - (double)config->out_height) * ratio ) );
+                new_height = config->out_height;
+
+				if( config->debug ) {
+              	  fprintf(stdout, " [*] aspect changed: width: %u / height: %u\n", new_width, new_height );
+				}
+            }
+        }
+
+        config->out_width = new_width;
+        config->out_height = new_height;
 	}
 	else if( config->mode == MODE_SCALEFIT ) {
 		if( in_dinfo.image_width > config->out_width ) {
@@ -468,7 +561,7 @@ main( int argc, char **argv ) {
 	}
 	else if( config->mode == MODE_CROPMANUAL ) {
 		if( (config->crop_x2 - config->crop_x) < 10 ) {
-			fprintf(stderr, "Error: source crop width too small\n");			
+			fprintf(stderr, "Error: source crop width too small\n");
 			return 10;
 		}
 		else if( (config->crop_y2 - config->crop_y) < 10 ) {
@@ -480,6 +573,11 @@ main( int argc, char **argv ) {
 			return 10;
 		}
 	}
+
+	if( config->debug ) {
+        fprintf(stdout, " [*] Out Width: %upx\n", config->out_width);
+        fprintf(stdout, " [*] Out Height: %upx\n", config->out_height);
+	}
 	
 	//out_fh = fopen(config->out_file,"wb");
 	out_fh = fopen(temp_out,"wb");
@@ -487,8 +585,9 @@ main( int argc, char **argv ) {
 		perror("out:file - fopen");
 		return 12;
 	}
+
 	setup_out(&out_cinfo, &jerr, out_fh, config->out_width, config->out_height, config->out_quality);
-	
+
 	int row_stride = in_dinfo.output_width * in_dinfo.output_components;
 	JSAMPARRAY buffer;
 	buffer = (in_dinfo.mem->alloc_sarray)
