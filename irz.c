@@ -10,7 +10,7 @@
 
 /*
 Copyright (c) 2009 ECMP Ltd.
-Copyright (c) 2010 Harry Roberts.
+Copyright (c) 2010,2011 Harry Roberts.
 Copyright (c) 2011 Cal Leeming.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -89,9 +89,9 @@ setup_in(struct jpeg_decompress_struct *in_dinfo, struct jpeg_error_mgr *jerr, F
 #define floor_cast(exp) ((long) exp)
 
 static void
-do_resize( struct jpeg_compress_struct *out_cinfo,
-					 struct jpeg_decompress_struct *in_dinfo,
-					 irz_config_t* config)
+do_resize( struct jpeg_compress_struct *out_cinfo
+	  ,struct jpeg_decompress_struct *in_dinfo
+	  ,irz_config_t* config)
 {
 	int srcW, srcH;
 	int dstX, dstY, srcX, srcY;
@@ -99,7 +99,7 @@ do_resize( struct jpeg_compress_struct *out_cinfo,
 	JSAMPROW out_row;
 	
 	int x, y;
-  double sy1, sy2, sx1, sx2;
+	double sy1, sy2, sx1, sx2;
   	
 	dstX = dstY = srcX = srcY = 0;
 	
@@ -146,119 +146,123 @@ do_resize( struct jpeg_compress_struct *out_cinfo,
 		free(tmp);
 	}
 
-    for (y = dstY; (y < dstY + dstH); y++) {
-            sy1 = ((double) y - (double) dstY) * (double) srcH / (double) dstH;
-            sy2 = ((double) (y + 1) - (double) dstY) * (double) srcH / (double) dstH;
+	for (y = dstY; (y < dstY + dstH); y++) {
+		sy1 = ((double) y - (double) dstY) * (double) srcH / (double) dstH;
+		sy2 = ((double) (y + 1) - (double) dstY) * (double) srcH / (double) dstH;
 					
-						for( yload2 = yload_old; yload2 < (int)sy1 + srcY; yload2++ ) {
-							free(buffer[yload2]);
-							buffer[yload2] = NULL;
-						}
+		for( yload2 = yload_old; yload2 < (int)sy1 + srcY; yload2++ ) {
+			free(buffer[yload2]);
+			buffer[yload2] = NULL;
+		}
 						
-						for( yload = (int)sy1 + srcY; yload < sy2 + srcY; yload++ ) {
-							if( yload < in_dinfo->output_scanline ) continue;
-							JSAMPROW yload_row = malloc(in_dinfo->image_width * in_dinfo->num_components);
-							jpeg_read_scanlines(in_dinfo, &yload_row, 1);
-							buffer[yload] = yload_row;
+		for( yload = (int)sy1 + srcY; yload < sy2 + srcY; yload++ ) {
+			if( yload < in_dinfo->output_scanline ) continue;
+			JSAMPROW yload_row = malloc(in_dinfo->image_width * in_dinfo->num_components);
+			jpeg_read_scanlines(in_dinfo, &yload_row, 1);
+			buffer[yload] = yload_row;
+		}
+		yload_old = sy1 + srcY;
+
+            	for (x = dstX; (x < dstX + dstW); x++) {
+			double sx, sy;
+                    	double spixels = 0;
+                    	double red = 0.0, green = 0.0, blue = 0.0, alpha = 0.0;
+                    	double alpha_factor, alpha_sum = 0.0, contrib_sum = 0.0;
+                    	sx1 = ((double) x - (double) dstX) * (double) srcW / dstW;
+                    	sx2 = ((double) (x + 1) - (double) dstX) * (double) srcW / dstW;
+                    	sy = sy1;
+                    	do {
+				double yportion;
+				if (floor_cast(sy) == floor_cast(sy1)) {
+					yportion = 1.0f - (sy - floor_cast(sy));
+					if (yportion > sy2 - sy1) {
+						yportion = sy2 - sy1;
+					}
+					sy = floor_cast(sy);
+                            	}
+				else if (sy == floorf(sy2)) {
+					yportion = sy2 - floor_cast(sy2);
+                            	}
+				else {
+					yportion = 1.0f;
+                            	}
+
+                            	sx = sx1;
+                            	do {
+                                    	double xportion;
+                                    	double pcontribution;
+                                    	if (floorf(sx) == floor_cast(sx1)) {
+                                            	xportion = 1.0f - (sx - floor_cast(sx));
+                                            	if (xportion > sx2 - sx1) {
+							xportion = sx2 - sx1;
 						}
-						yload_old = sy1 + srcY;
+						sx = floor_cast(sx);
+                                    	}
+					else if (sx == floorf(sx2)) {
+						xportion = sx2 - floor_cast(sx2);
+                                    	}
+					else {
+                                            	xportion = 1.0f;
+                                    	}
+                                    	pcontribution = xportion * yportion;
 
-            for (x = dstX; (x < dstX + dstW); x++) {
-                    double sx, sy;
-                    double spixels = 0;
-                    double red = 0.0, green = 0.0, blue = 0.0, alpha = 0.0;
-                    double alpha_factor, alpha_sum = 0.0, contrib_sum = 0.0;
-                    sx1 = ((double) x - (double) dstX) * (double) srcW / dstW;
-                    sx2 = ((double) (x + 1) - (double) dstX) * (double) srcW / dstW;
-                    sy = sy1;
-                    do {
-                            double yportion;
-                            if (floor_cast(sy) == floor_cast(sy1)) {
-                                    yportion = 1.0f - (sy - floor_cast(sy));
-                                    if (yportion > sy2 - sy1) {
-                                            yportion = sy2 - sy1;
-                                    }
-                                    sy = floor_cast(sy);
-                            } else if (sy == floorf(sy2)) {
-                                    yportion = sy2 - floor_cast(sy2);
-                            } else {
-                                    yportion = 1.0f;
-                            }
-                            sx = sx1;
-                            do {
-                                    double xportion;
-                                    double pcontribution;
-                                    if (floorf(sx) == floor_cast(sx1)) {
-                                            xportion = 1.0f - (sx - floor_cast(sx));
-                                            if (xportion > sx2 - sx1) {
-                                                    xportion = sx2 - sx1;
-                                            }
-                                            sx = floor_cast(sx);
-                                    } else if (sx == floorf(sx2)) {
-                                            xportion = sx2 - floor_cast(sx2);
-                                    } else {
-                                            xportion = 1.0f;
-                                    }
-                                    pcontribution = xportion * yportion;
-
-									//
-									JSAMPLE* p = buffer[ (int)sy + srcY ] + ((int)(sx + srcX) * in_dinfo->num_components);
-									alpha_factor = gdAlphaMax * pcontribution;
+					//
+					JSAMPLE* p = buffer[ (int)sy + srcY ] + ((int)(sx + srcX) * in_dinfo->num_components);
+					alpha_factor = gdAlphaMax * pcontribution;
 				
-									if( in_dinfo->num_components == 1 ) {
-										red += p[0] * alpha_factor;
-										green += p[0] * alpha_factor;
-										blue += p[0] * alpha_factor;
-									}
-									else {
-										red += p[0] * alpha_factor;
+					if( in_dinfo->num_components == 1 ) {
+						red += p[0] * alpha_factor;
+						green += p[0] * alpha_factor;
+						blue += p[0] * alpha_factor;
+					}
+					else {
+						red += p[0] * alpha_factor;
 		                                green += p[1] * alpha_factor;
 		                                blue += p[2] * alpha_factor;	
-									}	                                  
+					}
 	                                alpha += 0xFF * pcontribution;
-									//
+					//
 
-                                    alpha_sum += alpha_factor;
-                                    contrib_sum += pcontribution;
-                                    spixels += xportion * yportion;
-                                    sx += 1.0f;
+                                    	alpha_sum += alpha_factor;
+                                    	contrib_sum += pcontribution;
+                                    	spixels += xportion * yportion;
+                                    	sx += 1.0f;
+                            	} while (sx < sx2);
 
-                            } while (sx < sx2);
+                            	sy += 1.0f;
+			} while (sy < sy2);
 
-                            sy += 1.0f;
-                    } while (sy < sy2);
-
-			        if (spixels != 0.0f) {
+			if (spixels != 0.0f) {
 	                    red /= spixels;
 	                    green /= spixels;
 	                    blue /= spixels;
 	                    alpha /= spixels;
 	                }
 	            	if ( alpha_sum != 0.0f) {
-	                    if( contrib_sum != 0.0f) {
-	                            alpha_sum /= contrib_sum;
-	                    }
-	                    red /= alpha_sum;
-	                    green /= alpha_sum;
-	                    blue /= alpha_sum;
-		            }
-		            /* Clamping to allow for rounding errors above */
-		            if (red > 255.0f) {
-		                    red = 255.0f;
-		            }
-		            if (green > 255.0f) {
-		                    green = 255.0f;
-		            }
-		            if (blue > 255.0f) {
-		                    blue = 255.0f;
-		            }
-		            if (alpha > gdAlphaMax) {
-		                    alpha = gdAlphaMax;
-		            }
-		            out_row[3*x] = red;
-		            out_row[3*x+1] = green;
-		            out_row[3*x+2] = blue;
-		    }
+				if( contrib_sum != 0.0f) {
+					alpha_sum /= contrib_sum;
+				}
+				red /= alpha_sum;
+				green /= alpha_sum;
+				blue /= alpha_sum;
+			}
+			/* Clamping to allow for rounding errors above */
+			if (red > 255.0f) {
+				red = 255.0f;
+			}
+			if (green > 255.0f) {
+				green = 255.0f;
+			}
+			if (blue > 255.0f) {
+				blue = 255.0f;
+			}
+			if (alpha > gdAlphaMax) {
+				alpha = gdAlphaMax;
+			}
+			out_row[3*x] = red;
+			out_row[3*x+1] = green;
+			out_row[3*x+2] = blue;
+		}
 		jpeg_write_scanlines(out_cinfo, &out_row, 1);
 		// Forcibly stop, otherwise we get the error 'Application transferred too many scanlines'
 		if( in_dinfo->output_scanline >= in_dinfo->output_height ) break;
@@ -392,11 +396,11 @@ parse_options( int argc, char** argv ) {
             }
 	}
 	else if ( config->mode == MODE_SCALEASPECT) {
-        if( config->out_width < 1 && config->out_height < 1 ) {
-                fprintf(stderr, "Error: must specify either width or height when scaling an image by aspect ratio\n");
-                missing_opts++;
-        }
-    }
+        	if( config->out_width < 1 && config->out_height < 1 ) {
+                	fprintf(stderr, "Error: must specify either width or height when scaling an image by aspect ratio\n");
+                	missing_opts++;
+        	}
+    	}
 	else { // if( config->mode == MODE_CROP ) {
 		if( config->out_width == 0 ) {
 			fprintf(stderr, "Error: must specify output width when cropping an image\n");
@@ -441,13 +445,6 @@ main( int argc, char **argv ) {
 		return 9;
 	}
 	
-	/*
-	if( config->mode == MODE_CROP ) {
-		fprintf(stderr, "Error: crop mode is currently unsupported!\n");
-		return 10;
-	}
-	*/
-	
 	in_fh = fopen(config->in_file,"r");
 	if( ! in_fh ) {
 		perror("in:file - fopen");
@@ -461,24 +458,24 @@ main( int argc, char **argv ) {
 	setup_in(&in_dinfo, &jerr, in_fh);
 
 	if( config->debug ) {
-        printf(" [*] Image Width: %ipx\n", (int)in_dinfo.image_width);
-        printf(" [*] Image Height: %ipx\n", (int)in_dinfo.image_height);
-        printf(" [*] Tmp Loc: %s\n", temp_out);
+		printf(" [*] Image Width: %ipx\n", (int)in_dinfo.image_width);
+	        printf(" [*] Image Height: %ipx\n", (int)in_dinfo.image_height);
+	        printf(" [*] Tmp Loc: %s\n", temp_out);
 	}
 
-    if ( config->out_width != 0 ) {
-        if ( (int)in_dinfo.image_width < (int)config->out_width ) {
-            fprintf(stderr, " [*] Warning: specified width is larger than original image, reducing to %ipx.\n", (int)in_dinfo.image_width);
-            config->out_width = (double)in_dinfo.image_width;
-        }
-    }
+	if ( config->out_width != 0 ) {
+        	if ( (int)in_dinfo.image_width < (int)config->out_width ) {
+            		fprintf(stderr, " [*] Warning: specified width is larger than original image, reducing to %ipx.\n", (int)in_dinfo.image_width);
+            		config->out_width = (double)in_dinfo.image_width;
+        	}
+    	}
 
-    if ( config->out_height != 0 ) {
-        if ( (int)in_dinfo.image_height < (int)config->out_height ) {
-            fprintf(stderr, " [*] Warning: specified height is larger than original image, reducing to %ipx.\n", (int)in_dinfo.image_height);
-            config->out_height = (double)in_dinfo.image_height;
-        }
-    }
+    	if ( config->out_height != 0 ) {
+        	if ( (int)in_dinfo.image_height < (int)config->out_height ) {
+            		fprintf(stderr, " [*] Warning: specified height is larger than original image, reducing to %ipx.\n", (int)in_dinfo.image_height);
+            		config->out_height = (double)in_dinfo.image_height;
+        	}
+    	}
 	
 	// Auto-scale width or height if either was not specified
 	if( config->mode == MODE_SCALE ) {		
@@ -491,61 +488,63 @@ main( int argc, char **argv ) {
 			config->out_width = ((double)in_dinfo.image_width * ratio);
 		}
 	}
-    else if( config->mode == MODE_SCALEASPECT ) {
-        double ratio;
-        unsigned int new_width = in_dinfo.image_width;
-        unsigned int new_height = in_dinfo.image_height;
+    	else if( config->mode == MODE_SCALEASPECT ) {
+        	double ratio;
+        	unsigned int new_width = in_dinfo.image_width;
+        	unsigned int new_height = in_dinfo.image_height;
 
-        if (in_dinfo.image_width > in_dinfo.image_height) {
-            ratio = ( (double)in_dinfo.image_width / (double)in_dinfo.image_height ) ;
-        } else {
-            ratio = ( (double)in_dinfo.image_height / (double)in_dinfo.image_width ) ;
-        }
+        	if (in_dinfo.image_width > in_dinfo.image_height) {
+            		ratio = ( (double)in_dinfo.image_width / (double)in_dinfo.image_height ) ;
+        	}
+		else {
+            		ratio = ( (double)in_dinfo.image_height / (double)in_dinfo.image_width ) ;
+        	}
 
 		if( config->debug ) {
-        	fprintf(stdout, " [*] Ratio: %f\n", ratio);
+        		fprintf(stdout, " [*] Ratio: %f\n", ratio);
 		}
 
-        if (in_dinfo.image_width < in_dinfo.image_height) {
-            if (new_width > config->out_width) {
-                new_width = config->out_width;
-                new_height = ( new_height - ( ( (double)in_dinfo.image_width - (double)config->out_width) * ratio ) );
+        	if (in_dinfo.image_width < in_dinfo.image_height) {
+            		if (new_width > config->out_width) {
+                		new_width = config->out_width;
+                		new_height = ( new_height - ( ( (double)in_dinfo.image_width - (double)config->out_width) * ratio ) );
 
 				if( config->debug ) {
-             	   fprintf(stdout, " [-] aspect changed: width: %u / height: %u\n", new_width, new_height );
+             	   			fprintf(stdout, " [-] aspect changed: width: %u / height: %u\n", new_width, new_height );
 				}
-            }
+            		}
 
-            if (new_height > config->out_height) {
-                new_width = ( new_width - ( ( (double)new_height - (double)config->out_height) / ratio ) );
-                new_height = config->out_height;
+            		if (new_height > config->out_height) {
+                		new_width = ( new_width - ( ( (double)new_height - (double)config->out_height) / ratio ) );
+                		new_height = config->out_height;
 
 				if( config->debug ) {
-             	   fprintf(stdout, " [-] aspect changed: width: %u / height: %u\n", new_width, new_height );
+             	   			fprintf(stdout, " [-] aspect changed: width: %u / height: %u\n", new_width, new_height );
 				}
-            }
-        } else {
-            if (new_width > config->out_width) {
-                new_width = config->out_width;
-                new_height = ( new_height - ( ( (double)in_dinfo.image_width - (double)config->out_width) / ratio ) );
+            		}
+        	}
+		else {
+            		if (new_width > config->out_width) {
+                		new_width = config->out_width;
+                		new_height = ( new_height - ( ( (double)in_dinfo.image_width - (double)config->out_width) / ratio ) );
 
 				if( config->debug ) {
-             	   fprintf(stdout, " [*] aspect changed: width: %u / height: %u\n", new_width, new_height );
+             	   			fprintf(stdout, " [*] aspect changed: width: %u / height: %u\n", new_width, new_height );
 				}
-            }
+            		}
 
-            if (new_height > config->out_height) {
-                new_width = ( new_width - ( ( (double)new_height - (double)config->out_height) * ratio ) );
-                new_height = config->out_height;
+            		if (new_height > config->out_height) {
+                		new_width = ( new_width - ( ( (double)new_height - (double)config->out_height) * ratio ) );
+                		new_height = config->out_height;
 
 				if( config->debug ) {
-              	  fprintf(stdout, " [*] aspect changed: width: %u / height: %u\n", new_width, new_height );
+              	  			fprintf(stdout, " [*] aspect changed: width: %u / height: %u\n", new_width, new_height );
 				}
-            }
-        }
+            		}
+        	}
 
-        config->out_width = new_width;
-        config->out_height = new_height;
+        	config->out_width = new_width;
+        	config->out_height = new_height;
 	}
 	else if( config->mode == MODE_SCALEFIT ) {
 		if( in_dinfo.image_width > config->out_width ) {
@@ -575,8 +574,8 @@ main( int argc, char **argv ) {
 	}
 
 	if( config->debug ) {
-        fprintf(stdout, " [*] Out Width: %upx\n", config->out_width);
-        fprintf(stdout, " [*] Out Height: %upx\n", config->out_height);
+        	fprintf(stdout, " [*] Out Width: %upx\n", config->out_width);
+        	fprintf(stdout, " [*] Out Height: %upx\n", config->out_height);
 	}
 	
 	//out_fh = fopen(config->out_file,"wb");
@@ -590,8 +589,7 @@ main( int argc, char **argv ) {
 
 	int row_stride = in_dinfo.output_width * in_dinfo.output_components;
 	JSAMPARRAY buffer;
-	buffer = (in_dinfo.mem->alloc_sarray)
-		((j_common_ptr) &in_dinfo, JPOOL_IMAGE, row_stride, 1);
+	buffer = (in_dinfo.mem->alloc_sarray)((j_common_ptr) &in_dinfo, JPOOL_IMAGE, row_stride, 1);
 		
 	do_resize(&out_cinfo, &in_dinfo, config);
 
